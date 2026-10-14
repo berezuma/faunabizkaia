@@ -1,0 +1,183 @@
+<a class="skip" href="#main" data-i18n="skip"></a>
+
+<!-- JavaScriptik gabe grafikoek ez dute zer erakutsirik, baina berriak bai:
+     albistea bera ez da inoiz JavaScript bat. -->
+<noscript>
+  <div class="nojs">
+    <p><b>Zer iristen den.</b> Bizkaiko basa-faunaren errekuperazio-zentrora 7.649 animalia iritsi dira bost urtean (2021–2025), 294 espezietakoak. Ia erdiak — 3.605 — hilda iristen dira. Bizirik iristen direnetatik, 1.800 askatu dira naturara eta 1.933 hil dira edo sakrifikatu dituzte. Zergatik iritsi zen erabakitzen du zer gertatuko zaion: habiatik erorritako txita batek %61,6ko aukera du itzultzeko; autoak harrapatutako batek %28,8; jabeak entregatutako animalia batek %1,9.</p>
+    <p><b>Qué llega.</b> Al centro de recuperación de fauna silvestre de Bizkaia han llegado 7.649 animales en cinco años (2021–2025), de 294 especies. Casi la mitad —3.605— llegan muertos. De los que llegan vivos, 1.800 han sido liberados y 1.933 han muerto o han sido sacrificados. El motivo de la llegada decide el desenlace: un pollo caído del nido tiene un 61,6 % de volver; un animal atropellado, un 28,8 %; uno entregado por su dueño, un 1,9 %.</p>
+    <p>Iturria / Fuente: <a href="https://www.opendatabizkaia.eus/es/catalogo/centro-recuperacion-fauna">Open Data Bizkaia · centro-recuperacion-fauna</a>. Grafikoek eta bilatzaileak JavaScript behar dute. · Los gráficos y el buscador necesitan JavaScript.</p>
+  </div>
+</noscript>
+
+<!-- ===================== GOIBURUA ===================================== -->
+<header class="hero">
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
+  <div class="hero-line" id="heroLine"></div>
+  <p class="below" id="heroBelow" data-i18n="below"></p>
+  <div class="hero-inner">
+    <div class="hero-bar">
+      <span class="brand" data-i18n="brand"></span>
+      <div class="seg" role="group" aria-label="Hizkuntza / Idioma">
+        <button type="button" data-lang="eu" aria-pressed="true"><span>Euskaraz</span></button>
+        <button type="button" data-lang="es" aria-pressed="false"><span>Castellano</span></button>
+      </div>
+    </div>
+
+    <div class="hero-mid">
+      <p class="figure">7.649<small data-i18n="figureUnit"></small></p>
+      <h1 data-i18n="title"></h1>
+      <p class="stand" data-i18n="stand"></p>
+    </div>
+
+    <div class="hero-foot">
+      <span data-i18n="dateline"></span>
+      <span class="cue"><i></i><span data-i18n="cue"></span></span>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ===================== ESZENA ======================================= -->
+<section class="stage" id="stage" aria-labelledby="stageH">
+  <h2 id="stageH" class="skip" data-i18n="stageTitle"></h2>
+
+  <div class="stage-gfx">
+    <canvas id="wallCanvas" role="img" aria-label=""></canvas>
+    <div class="stage-hud">
+      <span class="yr disp" id="hudYear"></span>
+      <dl>
+        <div><dt data-i18n="rN"></dt><dd id="hudN"></dd></div>
+        <div><dt data-i18n="rAlive"></dt><dd id="hudAlive"></dd></div>
+        <div><dt data-i18n="rFree"></dt><dd id="hudFree"></dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="steps" id="steps"></div>
+</section>
+
+<!-- ===================== IRAKURKETA =================================== -->
+<section class="page-sec page-sec--line">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="proseKicker"></p>
+    <h2 data-i18n="proseTitle"></h2>
+    <p class="pull disp" data-i18n="pull"></p>
+    <div class="prose" id="prose"></div>
+  </div>
+</section>
+
+<!-- ===================== BIZIRAUTEKO ESKAILERA ======================== -->
+<section class="page-sec page-sec--pale page-sec--line">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="ladderKicker"></p>
+    <h2 data-i18n="ladderTitle"></h2>
+    <p class="lede" data-i18n="ladderLede"></p>
+    <div class="ladder" id="ladder"></div>
+    <p class="warn" data-i18n="ladderWarn"></p>
+  </div>
+</section>
+
+<!-- ===================== URTEKO PULTSUA =============================== -->
+<section class="page-sec">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="yearKicker"></p>
+    <h2 data-i18n="yearTitle"></h2>
+    <p class="lede" data-i18n="yearLede"></p>
+    <div class="chartbox" id="pulsebox" tabindex="0">
+      <svg id="pulse" class="chart" viewBox="0 0 1000 340" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+      <div class="tip" id="tipP" role="status"></div>
+    </div>
+    <div class="legend" id="pulseLegend"></div>
+  </div>
+</section>
+
+<!-- ===================== ESPEZIEAK ==================================== -->
+<section class="page-sec page-sec--pale">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="findKicker"></p>
+    <h2 data-i18n="findTitle"></h2>
+    <p class="lede" data-i18n="findLede"></p>
+    <div class="search">
+      <div class="field">
+        <input type="text" id="q" autocomplete="off" spellcheck="false" data-i18n-aria="ariaSearch">
+        <button type="button" id="qclear">&times;</button>
+      </div>
+      <div class="seg" role="group" data-i18n-aria="ariaFilt">
+        <button type="button" data-filt="all" aria-pressed="true"><span></span></button>
+        <button type="button" data-filt="bird" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="mam" aria-pressed="false"><span></span></button>
+        <button type="button" data-filt="rep" aria-pressed="false"><span></span></button>
+      </div>
+      <button type="button" class="ghost" id="csv"><span></span></button>
+    </div>
+    <p class="hint" id="qcount"></p>
+    <div class="tbl" style="max-height:520px"><table id="spTable"><thead></thead><tbody></tbody></table></div>
+    <div class="legend" id="tblLegend"></div>
+  </div>
+</section>
+
+<!-- ===================== SEI ANIMALIAK ================================ -->
+<section class="page-sec six" aria-labelledby="sixH">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="sixKicker"></p>
+    <h2 id="sixH" data-i18n="sixTitle"></h2>
+    <p class="lede" data-i18n="sixLede"></p>
+
+    <div class="six-grid">
+      <!-- Zerrenda: seiak, bakoitza klik batera -->
+      <ol class="six-list" id="sixList"></ol>
+
+      <!-- Bisorea: arrastatuz biratzen da -->
+      <figure class="six-stage">
+        <div class="viewer" id="viewer" tabindex="0" role="img">
+          <canvas id="viewCv"></canvas>
+          <p class="viewer-hint" id="viewHint"><span data-i18n="dragHint"></span></p>
+          <div class="viewer-bar">
+            <button type="button" id="spinL" data-i18n-aria="ariaSpinL">‹</button>
+            <span class="deg">360°</span>
+            <button type="button" id="spinR" data-i18n-aria="ariaSpinR">›</button>
+          </div>
+        </div>
+        <figcaption id="viewCap"></figcaption>
+      </figure>
+
+      <!-- Erregistroa: entziklopedia bat ez, fitxa bat -->
+      <div class="six-rec" id="sixRec"></div>
+    </div>
+
+    <p class="six-line disp" data-i18n="sixLine"></p>
+    <p class="warn" data-i18n="sixWarn"></p>
+  </div>
+</section>
+
+<!-- ===================== AMAIERA ====================================== -->
+<section class="page-sec page-sec--end" aria-labelledby="endH">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="endKicker"></p>
+    <h2 id="endH" data-i18n="endTitle"></h2>
+    <div class="prose" id="endBody"></div>
+    <p class="endline disp" data-i18n="endLine"></p>
+  </div>
+</section>
+
+<!-- ===================== METODOLOGIA ================================== -->
+<section class="page-sec page-sec--line">
+  <div class="wrap">
+    <p class="eyebrow" data-i18n="methodKicker"></p>
+    <h2 data-i18n="methodTitle"></h2>
+    <div class="mgrid" id="method"></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span class="disp">7.649</span>
+    <span class="by" data-i18n="footBy"></span>
+    <span data-i18n="footSource"></span>
+    <button type="button" class="ghost" id="share"><span></span></button>
+  </div>
+</footer>

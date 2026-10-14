@@ -1,0 +1,1110 @@
+<script>
+(function(){
+"use strict";
+
+/* ===========================================================================
+   Datuak. Animalia bakoitza ilara bat da, zutabe paralelotan: 7.649 puntu
+   marrazten dira fotograma bakoitzean, eta objektu-zerrenda bat motelegia
+   litzateke horretarako.
+=========================================================================== */
+const RAW = JSON.parse(document.getElementById("fn-data").textContent);
+const SP = RAW.species, CAUSES = RAW.causes, OUTS = RAW.outs, MUNS = RAW.muns;
+const CG = RAW.causeGroup, OG = RAW.outGroup;
+const CLASSES = RAW.classes, SUBS = RAW.subs;
+
+const N = RAW.rows.length;
+const R_mon = new Int16Array(N);     // hilabetea, 0 = lehen hilabetea
+const R_sp  = new Int16Array(N);
+const R_cau = new Int16Array(N);
+const R_out = new Int16Array(N);
+const R_liv = new Uint8Array(N);     // bizirik iritsi da?
+const R_mun = new Int16Array(N), R_rel = new Int16Array(N);
+const DATES = new Array(N);
+
+let M0 = null;
+RAW.rows.forEach(r => { const m = r[0].slice(0, 7); if (M0 === null || m < M0) M0 = m; });
+const monIx = s => { const y = +s.slice(0,4), m = +s.slice(5,7);
+  return (y - +M0.slice(0,4)) * 12 + (m - +M0.slice(5,7)); };
+
+RAW.rows.forEach((r, i) => {
+  DATES[i] = r[0];
+  R_mon[i] = monIx(r[0]);
+  R_sp[i] = r[2]; R_cau[i] = r[3]; R_liv[i] = r[4]; R_out[i] = r[5];
+  R_mun[i] = r[6]; R_rel[i] = r[7];
+});
+const NM = Math.max(...R_mon) + 1;                       // hilabete kopurua
+const YEARS = [...new Set(RAW.rows.map(r => +r[0].slice(0,4)))].sort();
+
+/* --- laburpenak ---------------------------------------------------------- */
+const liveN = [...R_liv].reduce((a,b) => a+b, 0);
+const deadIn = N - liveN;
+const isFree = i => OG[R_out[i]] === "free";
+const isLost = i => OG[R_out[i]] === "dead" || OG[R_out[i]] === "put";
+const known  = i => R_liv[i] && OG[R_out[i]] !== "unk";
+const freeN = RAW.rows.reduce((a,_,i) => a + (isFree(i) ? 1 : 0), 0);
+const knownN = RAW.rows.reduce((a,_,i) => a + (known(i) ? 1 : 0), 0);
+const lostN = RAW.rows.reduce((a,_,i) => a + (known(i) && isLost(i) ? 1 : 0), 0);
+
+/* Hilabeteko zenbaketak, eszenarako. */
+const monAll = new Int32Array(NM), monLive = new Int32Array(NM), monDead = new Int32Array(NM);
+for (let i = 0; i < N; i++){
+  monAll[R_mon[i]]++;
+  (R_liv[i] ? monLive : monDead)[R_mon[i]]++;
+}
+
+/* Bizirauteko eskailera: zergatik iritsi zen, eta zenbatek atera zuten.
+   Bizirik iritsitakoak bakarrik: hilda iristen denak ez du aukerarik. */
+const LADDER = (() => {
+  const g = new Map();
+  for (let i = 0; i < N; i++){
+    if (!known(i)) continue;
+    const k = R_cau[i];
+    const e = g.get(k) || {k, n: 0, free: 0};
+    e.n++; if (isFree(i)) e.free++;
+    g.set(k, e);
+  }
+  /* Arrazoirik gabeko erregistroak kanpoan: hutsune bat ez da arrazoi bat,
+     eta eskailerako lehen maila izango litzateke, esanahirik gabe. */
+  return [...g.values()]
+    .filter(e => e.n >= 25 && CAUSES[e.k] && CAUSES[e.k] !== "—")
+    .sort((a, b) => b.free / b.n - a.free / a.n);
+})();
+
+/* Espezie bakoitzaren fitxa: zenbat iritsi, zenbat bizirik, zenbat askatu. */
+const BYSP = (() => {
+  const a = SP.map((s, i) => ({i, n: 0, live: 0, free: 0, lost: 0}));
+  for (let i = 0; i < N; i++){
+    const e = a[R_sp[i]];
+    e.n++; if (R_liv[i]) e.live++;
+    if (isFree(i)) e.free++; else if (known(i) && isLost(i)) e.lost++;
+  }
+  return a.filter(e => e.n > 0).sort((x, y) => y.n - x.n);
+})();
+
+/* Sei animaliak: jabeak emanda iritsi eta hala ere askatu zirenak. */
+const HANDED = CAUSES.findIndex(c => /^cedido por particular/i.test(c));
+const SIX = [];
+for (let i = 0; i < N; i++) if (R_cau[i] === HANDED && isFree(i)) SIX.push(i);
+const HANDED_N = RAW.rows.reduce((a,_,i) => a + (R_cau[i] === HANDED ? 1 : 0), 0);
+const HANDED_LIVE = RAW.rows.reduce((a,_,i) => a + (R_cau[i] === HANDED && R_liv[i] ? 1 : 0), 0);
+
+/* ===========================================================================
+   Testua
+=========================================================================== */
+const T = {
+ eu:{
+  skip:"Edukira jauzi",
+  titleTag:"Zer iristen den · Bizkaiko basa-faunaren errekuperazio-zentroa, animaliaz animalia",
+  brand:"Open Data Bizkaia",
+  figureUnit:" animalia",
+  title:"Bost urtean, 7.649 animalia iritsi dira Bizkaiko basa-faunaren errekuperazio-zentrora. Ia erdiak hilda.",
+  stand:"294 espezie, 2021etik 2025era. Batzuk habiatik erori ziren; beste batzuk autoak harrapatu zituen; eta <b>1.064</b> iritsi ziren norbaitek handik kendu nahi zituelako. Zergatik iritsi zinen erabakitzen du bizirik aterako zaren.",
+  dateline:"Bizkaia · datuak 2021-2025",
+  cue:"Egin behera",
+  below:"Marratik behera: <b>3.605</b> animalia hilda iritsi ziren. Ez zuten zentrorik behar; erregistro bat behar zuten.",
+
+  stageTitle:"Bost urte, hilabetez hilabete",
+  rN:"animalia", rAlive:"bizirik iritsiak", rFree:"askatuak",
+  steps:[
+   {h:"Animalia bakoitza puntu bat da",
+    p:"Bizkaiko basa-faunaren errekuperazio-zentrora <b>7.649 animalia</b> iritsi dira bost urtean, 294 espezietakoak. Hilabetez hilabete daude hemen, 2021eko urtarriletik 2025eko abendura. Bost mendi ikusten dira, eta bostak udakoak dira."},
+   {h:"Erdia ez da bizirik iristen",
+    p:"Marra bat agertzen da orain, eta ez da irudi bat: iturriko eremu bat da, bi balio besterik ez dituena. Gainean bizirik iritsi zirenak, <b>4.044</b>. Azpian, <em>3.605 hilda</em>. Zentroak jasotzen duena ez da beti pazientea; askotan erregistroa da."},
+   {h:"Udako mendiak txitak dira",
+    p:"Uztailean 1.447 animalia iristen dira; abenduan 309. Alde hori ia osorik espezie bakar baten lana da: <b>habiatik erorita</b> topatzen den txitarena. 2.068 kasu, laurenetik gora. Jendeak lurrean aurkitzen du, eta jasotzen du."},
+   {h:"Baina beste egutegi bat ere badago",
+    p:"Hauek ez datoz laguntza bila: <em>norbaitek handik kendu nahi zituelako</em> iristen dira. Populazio-kontrola, batidak, espezie bat ezabatzea. <b>1.064 animalia</b>, eta beste erritmo bat: ekaina, uztaila, otsaila. Basurdeak eta Floridako dortokak dira ia denak."},
+   {h:"Eta gero, zer",
+    p:"Bizirik iritsi zirenetatik <b>1.800</b> itzuli ziren naturara. <em>1.933</em> hil ziren edo sakrifikatu zituzten. Marra bera da orain beste gauza bat: ez nola iritsi ziren, nola atera ziren baizik."}
+  ],
+
+  proseKicker:"Zer erakusten duten datuek",
+  proseTitle:"Zergatik iritsi zinen erabakitzen du zer gertatuko zaizun",
+  prose:[
+   "Errekuperazio-zentro bat izena baino gehiago da: sailkapen bat da. Animalia bat atetik sartzen denean, langile batek <b>sartzeko arrazoia</b> idazten du, eta arrazoi horrek beste ezerk baino gehiago aurreikusten du zer gertatuko zaion.",
+   "Habiatik erorita iritsitako txita batek <b>%61,6ko</b> aukera du itzultzeko. Autoak harrapatutako batek, <b>%28,8</b>. Tiro batek jotakoak, %31,4. Eta jabeak entregatutako animalia batek — etxean eduki eta orain ezin duenak — <b>%1,9</b>: 312 iritsi ziren bizirik, eta sei atera ziren.",
+   "Azken zifra horrek ez du zerikusirik albaitaritzarekin. Jabeak entregatzen duena ia beti <b>Floridako dortoka</b> bat da: txikitan erositakoa, hazi ahala handiegia bihurtu dena. Espezie inbaditzailea da, eta legeak ezin du naturara itzuli. Zentrora iristen da, eta han geratzen da edo sakrifikatzen dute. Ez da zauri bat; erabaki bat da."
+  ],
+  pull:"Sei animalia, 339tik. Hori da jabeak entregatu eta naturara itzuli ziren guztia.",
+
+  ladderKicker:"Bizirauteko aukerak",
+  ladderTitle:"Eskailera",
+  ladderLede:"Bizirik iritsitako animalien artean, zenbatek berreskuratu zuten askatasuna, sartzeko arrazoiaren arabera. Hogeita bost kasu baino gutxiagoko arrazoiak kanpoan utzi dira.",
+  ladderWarn:"<b>Ehuneko hauek ez dute zentroaren lana neurtzen.</b> Arrazoi bakoitzak animalia desberdinak ekartzen ditu eta larritasun desberdinarekin: autoak harrapatutako hegazti batek hezur hautsiak ditu; habiatik erorita iristen den txitak, askotan, ezer ez. Eskailerak erakusten duena zergatik iritsi ziren da, ez nola zaindu zituzten.",
+  lFree:"askatuta", lOf:"{n}tik",
+
+  yearKicker:"Urteko pultsua",
+  yearTitle:"Hamabi hilabete, bost aldiz",
+  yearLede:"Hilabete bakoitzean iritsitako animaliak, bost urteak bata bestearen gainean. Udako gailurra ez da kasualitatea: txiten denboraldia da.",
+  mon:["urt","ots","mar","api","mai","eka","uzt","abu","ira","urr","aza","abe"],
+  legAll:"Animalia guztiak", legYoung:"Txitak", legRemove:"Kentzeko iritsiak",
+  tipMon:"{m}: {n} animalia", tipDet:"{y} txita · {r} kentzeko",
+
+  findKicker:"294 espezie",
+  findTitle:"Zer iristen den, izenez izen",
+  findLede:"Bilatu espezie baten izena euskaraz, gaztelaniaz edo latinez. Barrak zer gertatu zen erakusten du: ezkerrean askatuak, eskuinean hil edo sakrifikatuak.",
+  qPlaceholder:"hontza, basurde, Bubo bubo…",
+  qClear:"Bilaketa garbitu",
+  qCount:"{n} espezie · {m} animalia",
+  fAll:"Denak", fBird:"Hegaztiak", fMam:"Ugaztunak", fRep:"Narrastiak",
+  ariaSearch:"Bilatu espeziea", ariaFilt:"Zein animalia erakutsi",
+  thSp:"Espeziea", thCls:"Taldea", thN:"Iritsiak", thLive:"Bizirik", thFree:"Askatuak", thFate:"Zer gertatu zen",
+  sortAsc:"gorakoa", sortDesc:"beherakoa", sortBy:"{c} ({d})",
+  csv:"CSV jaitsi", tblEmpty:"Bat ere ez.",
+  legRowFree:"Askatuak", legRowLost:"Hil edo sakrifikatuak",
+
+  sixKicker:"Seiak",
+  sixTitle:"Jabe batek entregatu eta itzuli ziren bakarrak",
+  sixLede:"339 animalia iritsi ziren norbaitek etxean eduki eta ezin zuelako gehiago. Hirurehun eta hamabi bizirik. Sei itzuli ziren naturara. Hauek dira.",
+  dragHint:"Arrastatu biratzeko",
+  capShows:"Irudian: {s} — <i>Mauremys leprosa</i>-ren eskanerik ez dago, eta hau da hurbilen dagoen dortoka bertakoa",
+  ariaSpinL:"Ezkerrera biratu", ariaSpinR:"Eskuinera biratu",
+  ariaViewer:"{s}, hiru dimentsiotan. Gezi-teklekin bira dezakezu.",
+  recDate:"Jasoa", recFrom:"Nondik", recTo:"Nora", recWhy:"Zergatik", recEnd:"Bilakaera",
+  recWhyVal:"Jabe batek entregatua", recEndVal:"Naturara itzulia",
+  recSame:"jaso zuten leku berean",
+  sixLine:"Bi hontz, egun berean, bailara beretik — eta bailara berera itzuliak.",
+  sixWarn:"<b>Hiru dimentsioko irudiak irudikapenak dira, ez animalia hauen argazkiak.</b> Hontza Parisko Natura Historiako Museoaren ale baten eskaneatzea da; usoa <i>Columba livia</i> espeziearen modelo bat; ur-dortoka <i>Emys orbicularis</i> baten eskaneatzea, eta ez erregistroko <i>Mauremys leprosa</i>. Iturriak ez dakar irudirik: datuak dakartza, eta datuek ez dute aurpegirik.",
+
+  endKicker:"Azkena",
+  endTitle:"Erregistro bat ere zaintza da",
+  endBody:[
+   "Zentro honetara iristen den animalia bakoitzak lerro bat uzten du: noiz, nondik, zergatik, eta zer gertatu zen gero. Lerro horiek ez dute animalia salbatzen. Baina elkarrekin, hirurogei hilabetez, beste zerbait egiten dute: gure eskuaren forma erakusten dute.",
+   "<b>721 animalia</b> iritsi ziren guk zuzenean eragindako arrazoi batengatik — harrapatuta, tirokatuta, elektrokutatuta, pozoituta, beiran edo kablean jota. Eta <b>1.064</b> iritsi ziren handik kendu nahi genituelako. Biak batuta, <b>1.785 animalia</b>: ia laurden bat."
+  ],
+  endLine:"Zergatik iritsi zinen erabakitzen du nola aterako zaren.",
+
+  methodKicker:"Nola egin dugun",
+  methodTitle:"Metodologia eta iturriak",
+  method:[
+   {h:"Datu-iturria",b:"<p>Open Data Bizkaia, <code>centro-recuperacion-fauna</code> datu-multzoa, CKAN <code>datastore_search</code> APIaren bidez. Bost baliabide, urte bana: <b>2021-2025</b>, 7.649 erregistro eta 19 eremu.</p><p><a href=\"https://www.opendatabizkaia.eus/es/catalogo/centro-recuperacion-fauna\" target=\"_blank\" rel=\"noopener\">opendatabizkaia.eus</a></p>"},
+   {h:"Izenak bateratzea",b:"<p>Iturriak maiuskulak eta minuskulak nahasten ditu («AVES» eta «Aves», «Abejero Europeo» eta «Abejero europeo»), eta horrek espezie bera birritan zenbatzea eragiten du. Gaztelaniazko izen normalizatua hartu dugu gako gisa, eta euskarazko eta izen zientifikoa hari lotu: <b>380 etiketa, 294 espezie</b>.</p><p>42 espeziek ez dute euskarazko izenik iturrian; horietan gaztelaniazkoa erakusten da.</p>"},
+   {h:"Iturriko akatsak",b:"<p>Izen zientifiko batzuk gaizki idatzita daude jatorrian: <span class=\"sci\">Larus michaellis</span> (<span class=\"sci\">michahellis</span> beharrean), <span class=\"sci\">Columba libia</span> (<span class=\"sci\">livia</span>), <span class=\"sci\">Accipiter nissus</span> eta <span class=\"sci\">nisus</span> biak.</p><p>Ez ditugu zuzendu: iturrian dagoena erakusten dugu, eta hemen esaten dugu. Zuzenduz gero, orria eta iturria ezin dira alderatu.</p>"},
+   {h:"Bizirik ala hilda",b:"<p><code>SARTZEKO EGOERA</code> eremuak bi balio besterik ez ditu, eta ez du interpretaziorik behar. Orriko marra hori da: gainean bizirik iritsitakoak, azpian hilda.</p><p>Hilda iristen diren 3.605 animaliak ez dira zentroaren porrota: aurkitu eta eraman egin dituzte, eta erregistroan sartzen dira. Askotan hori da haien azken erabilgarritasuna — jakitea zerk hiltzen dituen.</p>"},
+   {h:"Emaitza ezezaguna",b:"<p><code>BILAKAERA</code> eremua <b>3.616 erregistrotan hutsik dago</b>, ia denak hilda iritsitakoenak. Bizirik iritsitako 4.044etatik 4.033k dute emaitza jasota.</p><p>Bizirauteko ehunekoak bizirik iritsi eta emaitza ezaguna dutenen gainean kalkulatzen dira beti. Bestela zentroari leporatuko genioke ailegatu aurretik gertatutakoa.</p>"},
+   {h:"Zer ez dakigun",b:"<p>Datu-multzoak ez du esaten zenbat denbora egon zen animalia zentroan, zer tratamendu jaso zuen, ez eta nork eraman zuen ere. Ez dago koordenaturik: udalerria da zehaztasun handiena.</p><p>Beraz orri honek zer iristen den eta zer ateratzen den erakuts dezake. Zer gertatu zen barruan, historia klinikoak baino ezin du esan.</p>"},
+   {h:"Hiru dimentsioko irudiak",b:"<p>Sei animalien atalean ikusten dena ez da argazki bat: Blenderren errendatutako 36 fotogramako biraketa bat da espezie bakoitzeko. Ez da WebGL, irudi-sekuentzia bat baizik — hala argiztapena errendatze-kalitatekoa da eta orriak ez du kanpo-liburutegirik behar.</p><p><b>Hontza handia</b>: Parisko Natura Historiako Museoaren ale baten eskaneatzea (MNHN-ZO-MO-2003-2723), <b>pierreyves.gagnier</b>-ena, CC BY. <b>Haitz-usoa</b>: <b>kenchoo</b>-ren modeloa, CC BY. <b>Ur-dortoka</b>: <b>arribadaclub</b>-en eskaneatzea, CC BY — <i>Emys orbicularis</i> da, ez <i>Mauremys leprosa</i>: azken honen eskanerik ez dago, eta <i>Emys</i> da Iberiako beste ur-dortoka bertakoa, putzu beretan bizi dena. Orrian hala esaten da, irudiaren azpian.</p><p>Hirurak <b>irudikapenak</b> dira, ez animalia zehatz horien erretratuak. Iturriak ez dakar irudirik.</p>"},
+   {h:"Tresnak",b:"<p>Python 3 datuak jaitsi, bateratu eta trinkotzeko. Bistaratzea eskuz idatzitako canvas, SVG eta JavaScript hutsa da, <b>kanpo-liburutegirik gabe</b>: 7.649 laukizuzen, fotograma bakoitzean.</p><p>Prozesu osoa errepikagarria da: script bat datuentzat, beste bat orria muntatzeko.</p>"}
+  ],
+  footBy:"Datuak, kodea eta testua: <b>Beñat</b>",
+  footSource:"Iturria: Open Data Bizkaia · centro-recuperacion-fauna",
+  share:"Esteka kopiatu", shared:"Kopiatuta"
+ },
+
+ es:{
+  skip:"Saltar al contenido",
+  titleTag:"Qué llega · El centro de recuperación de fauna silvestre de Bizkaia, animal a animal",
+  brand:"Open Data Bizkaia",
+  figureUnit:" animales",
+  title:"En cinco años han llegado 7.649 animales al centro de recuperación de fauna silvestre de Bizkaia. Casi la mitad, muertos.",
+  stand:"294 especies, de 2021 a 2025. Unos se cayeron del nido; a otros los atropelló un coche; y <b>1.064</b> llegaron porque alguien quería quitarlos de ahí. El motivo de tu llegada decide si saldrás vivo.",
+  dateline:"Bizkaia · datos de 2021 a 2025",
+  cue:"Desplázate",
+  below:"Bajo la línea: <b>3.605</b> animales llegaron muertos. No necesitaban un centro; necesitaban un registro.",
+
+  stageTitle:"Cinco años, mes a mes",
+  rN:"animales", rAlive:"llegaron vivos", rFree:"liberados",
+  steps:[
+   {h:"Cada animal es un punto",
+    p:"Al centro de recuperación de fauna silvestre de Bizkaia han llegado <b>7.649 animales</b> en cinco años, de 294 especies. Están aquí mes a mes, de enero de 2021 a diciembre de 2025. Se ven cinco montañas, y las cinco son de verano."},
+   {h:"La mitad no llega viva",
+    p:"Aparece una línea, y no es una metáfora: es un campo de la fuente con dos valores. Encima, los <b>4.044</b> que llegaron vivos. Debajo, <em>3.605 muertos</em>. Lo que recibe el centro no siempre es un paciente; muchas veces es un registro."},
+   {h:"Las montañas del verano son pollos",
+    p:"En julio llegan 1.447 animales; en diciembre, 309. Esa diferencia es casi entera obra de un solo motivo: el pollo <b>caído del nido</b>. 2.068 casos, más de la cuarta parte. La gente lo encuentra en el suelo y lo recoge."},
+   {h:"Pero hay otro calendario",
+    p:"Estos no vienen buscando ayuda: llegan <em>porque alguien quería quitarlos de ahí</em>. Control poblacional, batidas, eliminación de una especie. <b>1.064 animales</b>, y otro ritmo: junio, julio, febrero. Son casi todos jabalíes y galápagos de Florida."},
+   {h:"Y después, qué",
+    p:"De los que llegaron vivos, <b>1.800</b> volvieron a la naturaleza. <em>1.933</em> murieron o fueron sacrificados. La misma línea significa ahora otra cosa: no cómo llegaron, sino cómo salieron."}
+  ],
+
+  proseKicker:"Qué muestran los datos",
+  proseTitle:"El motivo de tu llegada decide lo que te va a pasar",
+  prose:[
+   "Un centro de recuperación es más que un nombre: es una clasificación. Cuando un animal entra por la puerta, alguien escribe la <b>causa de ingreso</b>, y esa causa predice mejor que ninguna otra cosa lo que va a ocurrirle.",
+   "Un pollo caído del nido tiene un <b>61,6 %</b> de volver. Uno atropellado, un <b>28,8 %</b>. Uno con un disparo, un 31,4 %. Y un animal entregado por su dueño — alguien que lo tuvo en casa y ya no puede — un <b>1,9 %</b>: llegaron 312 vivos y salieron seis.",
+   "Esa última cifra no tiene que ver con la veterinaria. Lo que entrega un particular es casi siempre un <b>galápago de Florida</b>: comprado pequeño, convertido en demasiado grande. Es especie invasora, y la ley no permite devolverlo a la naturaleza. Llega al centro y allí se queda, o se sacrifica. No es una herida; es una decisión."
+  ],
+  pull:"Seis animales de 339. Eso es todo lo que entregó un particular y volvió a la naturaleza.",
+
+  ladderKicker:"Probabilidades",
+  ladderTitle:"La escalera",
+  ladderLede:"Entre los animales que llegaron vivos, cuántos recuperaron la libertad, según la causa de ingreso. Se dejan fuera las causas con menos de veinticinco casos.",
+  ladderWarn:"<b>Estos porcentajes no miden el trabajo del centro.</b> Cada causa trae animales distintos y con gravedad distinta: un ave atropellada llega con huesos rotos; un pollo caído del nido, muchas veces, sin nada. Lo que enseña la escalera es por qué llegaron, no cómo los cuidaron.",
+  lFree:"liberados", lOf:"de {n}",
+
+  yearKicker:"El pulso del año",
+  yearTitle:"Doce meses, cinco veces",
+  yearLede:"Animales llegados cada mes, con los cinco años uno sobre otro. El pico del verano no es casualidad: es la temporada de los pollos.",
+  mon:["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"],
+  legAll:"Todos los animales", legYoung:"Pollos", legRemove:"Llegados para ser retirados",
+  tipMon:"{m}: {n} animales", tipDet:"{y} pollos · {r} retirados",
+
+  findKicker:"294 especies",
+  findTitle:"Qué llega, nombre a nombre",
+  findLede:"Busca una especie en euskera, castellano o latín. La barra enseña qué pasó: a la izquierda los liberados, a la derecha los que murieron o fueron sacrificados.",
+  qPlaceholder:"búho, jabalí, Bubo bubo…",
+  qClear:"Borrar la búsqueda",
+  qCount:"{n} especies · {m} animales",
+  fAll:"Todas", fBird:"Aves", fMam:"Mamíferos", fRep:"Reptiles",
+  ariaSearch:"Buscar especie", ariaFilt:"Qué animales mostrar",
+  thSp:"Especie", thCls:"Grupo", thN:"Llegados", thLive:"Vivos", thFree:"Liberados", thFate:"Qué pasó",
+  sortAsc:"ascendente", sortDesc:"descendente", sortBy:"{c} ({d})",
+  csv:"Descargar CSV", tblEmpty:"Ninguna.",
+  legRowFree:"Liberados", legRowLost:"Muertos o sacrificados",
+
+  sixKicker:"Los seis",
+  sixTitle:"Los únicos que entregó un particular y volvieron",
+  sixLede:"Llegaron 339 animales porque alguien los tuvo en casa y ya no pudo más. Trescientos doce, vivos. Seis volvieron a la naturaleza. Son estos.",
+  dragHint:"Arrastra para girar",
+  capShows:"En la imagen: {s} — no existe ningún escaneo de <i>Mauremys leprosa</i>, y este es el galápago autóctono más cercano",
+  ariaSpinL:"Girar a la izquierda", ariaSpinR:"Girar a la derecha",
+  ariaViewer:"{s}, en tres dimensiones. Puedes girarlo con las flechas.",
+  recDate:"Recibido", recFrom:"Desde", recTo:"Hasta", recWhy:"Por qué", recEnd:"Desenlace",
+  recWhyVal:"Entregado por un particular", recEndVal:"Devuelto a la naturaleza",
+  recSame:"en el mismo sitio donde lo recogieron",
+  sixLine:"Dos búhos, el mismo día, del mismo valle — y devueltos al mismo valle.",
+  sixWarn:"<b>Las imágenes en tres dimensiones son representaciones, no fotografías de estos animales.</b> El búho es el escaneo de un ejemplar del Museo Nacional de Historia Natural de París; la paloma, un modelo de la especie <i>Columba livia</i>; el galápago es el escaneo de un <i>Emys orbicularis</i>, no del <i>Mauremys leprosa</i> del registro. La fuente no trae imágenes: trae datos, y los datos no tienen cara.",
+
+  endKicker:"Para terminar",
+  endTitle:"Un registro también es cuidado",
+  endBody:[
+   "Cada animal que llega a este centro deja una línea: cuándo, de dónde, por qué, y qué pasó después. Esas líneas no salvan al animal. Pero juntas, a lo largo de sesenta meses, hacen otra cosa: dibujan la forma de nuestra mano.",
+   "<b>721 animales</b> llegaron por una causa directamente nuestra — atropellados, disparados, electrocutados, envenenados, contra un cristal o un cable. Y <b>1.064</b> llegaron porque queríamos quitarlos de ahí. Sumados, <b>1.785 animales</b>: casi una cuarta parte."
+  ],
+  endLine:"El motivo de tu llegada decide cómo saldrás.",
+
+  methodKicker:"Cómo está hecho",
+  methodTitle:"Metodología y fuentes",
+  method:[
+   {h:"Fuente de datos",b:"<p>Open Data Bizkaia, conjunto <code>centro-recuperacion-fauna</code>, vía la API CKAN <code>datastore_search</code>. Cinco recursos, uno por año: <b>2021-2025</b>, 7.649 registros y 19 campos.</p><p><a href=\"https://www.opendatabizkaia.eus/es/catalogo/centro-recuperacion-fauna\" target=\"_blank\" rel=\"noopener\">opendatabizkaia.eus</a></p>"},
+   {h:"Unificar los nombres",b:"<p>La fuente mezcla mayúsculas y minúsculas («AVES» y «Aves», «Abejero Europeo» y «Abejero europeo»), lo que hace contar dos veces la misma especie. Hemos usado el nombre castellano normalizado como clave, y colgado de ahí el euskera y el científico: <b>380 etiquetas, 294 especies</b>.</p><p>42 especies no tienen nombre en euskera en la fuente; en esas se muestra el castellano.</p>"},
+   {h:"Errores de la fuente",b:"<p>Algunos nombres científicos están mal escritos en origen: <span class=\"sci\">Larus michaellis</span> (por <span class=\"sci\">michahellis</span>), <span class=\"sci\">Columba libia</span> (por <span class=\"sci\">livia</span>), <span class=\"sci\">Accipiter nissus</span> y <span class=\"sci\">nisus</span> conviviendo.</p><p>No los hemos corregido: mostramos lo que hay en la fuente, y lo decimos aquí. Si los corrigiéramos, la página y la fuente dejarían de poder compararse.</p>"},
+   {h:"Vivo o muerto",b:"<p>El campo <code>ESTADO INGRESO</code> solo tiene dos valores y no necesita interpretación. La línea de la página es eso: encima los que llegaron vivos, debajo los que llegaron muertos.</p><p>Los 3.605 que llegan muertos no son un fracaso del centro: alguien los encontró y los llevó, y entran en el registro. Muchas veces esa es su última utilidad — saber qué los mata.</p>"},
+   {h:"Desenlace desconocido",b:"<p>El campo <code>EVOLUCIÓN</code> está <b>vacío en 3.616 registros</b>, casi todos de animales que llegaron muertos. De los 4.044 que llegaron vivos, 4.033 tienen desenlace anotado.</p><p>Los porcentajes de supervivencia se calculan siempre sobre los que llegaron vivos y tienen desenlace. Si no, le estaríamos atribuyendo al centro lo que pasó antes de llegar.</p>"},
+   {h:"Lo que no sabemos",b:"<p>El conjunto no dice cuánto tiempo estuvo el animal en el centro, qué tratamiento recibió, ni quién lo llevó. No hay coordenadas: el municipio es el mayor detalle.</p><p>Así que esta página puede enseñar qué entra y qué sale. Qué pasó dentro solo puede decirlo la historia clínica.</p>"},
+   {h:"Las imágenes en tres dimensiones",b:"<p>Lo que se ve en la sección de los seis animales no es una fotografía: es un giro de 36 fotogramas por especie, renderizado en Blender. No es WebGL, sino una secuencia de imágenes — así la iluminación es de calidad de render y la página no necesita ninguna librería externa.</p><p><b>Búho real</b>: escaneo de un ejemplar del Museo Nacional de Historia Natural de París (MNHN-ZO-MO-2003-2723), de <b>pierreyves.gagnier</b>, CC BY. <b>Paloma</b>: modelo de <b>kenchoo</b>, CC BY. <b>Galápago</b>: escaneo de <b>arribadaclub</b>, CC BY — es <i>Emys orbicularis</i>, no <i>Mauremys leprosa</i>: de esta última no existe ningún escaneo, y <i>Emys</i> es el otro galápago autóctono ibérico, que vive en las mismas charcas. En la página se dice, bajo la imagen.</p><p>Los tres son <b>representaciones</b>, no retratos de esos animales concretos. La fuente no trae imágenes.</p>"},
+   {h:"Herramientas",b:"<p>Python 3 para descargar, unificar y compactar. La visualización es canvas, SVG y JavaScript escritos a mano, <b>sin librerías externas</b>: 7.649 rectángulos en cada fotograma.</p><p>Todo el proceso es reproducible: un script para los datos, otro para montar la página.</p>"}
+  ],
+  footBy:"Datos, código y texto: <b>Beñat</b>",
+  footSource:"Fuente: Open Data Bizkaia · centro-recuperacion-fauna",
+  share:"Copiar enlace", shared:"Copiado"
+ }
+};
+
+/* ===========================================================================
+   Egoera eta laguntzaileak
+=========================================================================== */
+let lang = "eu", filt = "all", q = "", sortKey = "n", sortDir = -1;
+
+const $ = s => document.querySelector(s);
+const NUMLOC = "es-ES";
+const nf0 = new Intl.NumberFormat(NUMLOC, {maximumFractionDigits:0});
+const nf1 = new Intl.NumberFormat(NUMLOC, {minimumFractionDigits:1, maximumFractionDigits:1});
+/* Lau zifrako zenbakiak gaztelaniaz puntu gabe idazten dira arauz (7649),
+   baina orri honetako testuak 7.649 darabil. Koherentzia nagusitzen da:
+   leku guztietan berdin. */
+const nfg = new Intl.NumberFormat(NUMLOC, {useGrouping:true, maximumFractionDigits:0});
+const num = v => nfg.format(Math.round(v)).replace(/\u00a0/g, ".");
+const pc = v => nf1.format(v) + " %";
+const cssv = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* Espeziearen izena erakusteko: euskaraz lehenik, eta hori ez badago,
+   gaztelaniaz. 42 espeziek ez dute euskarazko izenik iturrian. */
+const spName = (s, l) => (l === "eu" ? (s.eu || s.es) : (s.es || s.eu));
+
+/* Iturriak sartzeko arrazoiak gaztelaniaz bakarrik dakartza. Orria elebiduna
+   denez, hemen itzultzen dira; itzulpenik ez dagoenean, iturrikoa bera. */
+const CAUSE_EU = {
+  "Cría":"Txita, habiatik erorita", "Traumatismo":"Traumatismoa",
+  "Control poblacional":"Populazio-kontrola", "Captura":"Harrapaketa",
+  "Debilidad":"Ahultasuna", "Atropello":"Autoak harrapatuta",
+  "Cedido por particular":"Jabe batek entregatua", "Batida":"Batida",
+  "Desconocido":"Ezezaguna", "Ataque de otro animal":"Beste animalia baten erasoa",
+  "Barreras artificiales":"Hesi artifizialak", "Enfermedad":"Gaixotasuna",
+  "Descaste ó eliminación de la especie":"Espeziea ezabatzea", "Temporal":"Ekaitza",
+  "Disparo":"Tiroa", "Electrocución":"Elektrokuzioa", "Decomisado":"Konfiskatua",
+  "Intoxicación":"Intoxikazioa", "Artes de pesca":"Arrantza-tresnak",
+  "Control Epidemiológico":"Kontrol epidemiologikoa", "Trampas":"Tranpak",
+  "Petroleado":"Petrolioz zikindua",
+  "Colisión línea eléctrica o aerogenerador":"Linea elektrikoa edo aerosorgailua",
+  "Cautividad":"Gatibutasuna", "Malformación congénita":"Sortzetiko malformazioa",
+  "Inanición":"Goseteak", "Ahogamiento":"Itotzea", "Anzuelo":"Amua"
+};
+const causeName = (c, l) => (l === "eu" && CAUSE_EU[c]) ? CAUSE_EU[c] : c;
+const clsOf = i => { const c = RAW.spClass[i]; return c >= 0 ? CLASSES[c] : ""; };
+const CLS_BIRD = "AVES", CLS_MAM = "MAMIFEROS", CLS_REP = "REPTILES";
+
+/* ===========================================================================
+   PUNTU-MOTORRA — eszena
+   Animalia bakoitza laukizuzen bat da; ez dira inoiz berriro sortzen, dauden
+   lekutik mugitzen dira. Jarraitutasuna bera da argudioa.
+=========================================================================== */
+const fromX = new Float32Array(N), fromY = new Float32Array(N),
+      fromW = new Float32Array(N), fromH = new Float32Array(N);
+const toX = new Float32Array(N), toY = new Float32Array(N),
+      toW = new Float32Array(N), toH = new Float32Array(N);
+const grp = new Uint8Array(N);          // 0 arrunta · 1 azpimarratua · 2 galduak
+const gIdx = [new Int32Array(N), new Int32Array(N), new Int32Array(N)];
+const gLen = [0, 0, 0];
+function regroup(){
+  gLen[0] = gLen[1] = gLen[2] = 0;
+  for (let i = 0; i < N; i++){ const g = grp[i]; gIdx[g][gLen[g]++] = i; }
+}
+
+/* Eszenaren urratsak. `split`: marrak zer esan nahi duen urrats horretan. */
+const SCENE = [
+  {split:"none",  mark:"none"},
+  {split:"state", mark:"none"},
+  {split:"state", mark:"young"},
+  {split:"state", mark:"remove"},
+  {split:"fate",  mark:"none"}
+];
+
+const wallCv = $("#wallCanvas"), wallCtx = wallCv.getContext("2d");
+const heroCv = $("#heroCanvas"), heroCtx = heroCv.getContext("2d");
+
+let stepIx = 0, tween = 1, rafId = null, lastTs = 0, plot = null, sizing = false;
+
+function measure(cv, ctx, opts){
+  const r = cv.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = r.width, H = r.height;
+  const pl = W * (opts.pl ?? .05), pr = W * (opts.pr ?? .05);
+  return {W, H, pl, pr, iw: W - pl - pr, lineY: H * (opts.line ?? .46)};
+}
+
+/* Animalia bakoitzari bere laukizuzena. Hilabeteko zutabe bat, eta zutabe
+   barruan pilatuta: gora bizirik iritsiak, behera hildakoak. */
+function buildTarget(cfg, P){
+  const colW = P.iw / NM;
+  const w = Math.max(1.1, colW - 1.4);
+  /* Laukizuzenaren altuera pilarik altuenak kabitzeko kalkulatzen da, ez
+     zenbaki finko batekin: bestela udako gailurrak oihaletik ateratzen ziren. */
+  const topRoom = P.lineY - P.H * 0.10;
+  const botRoom = P.H - P.lineY - P.H * 0.10;
+  const hi = Math.max(1, Math.max(...monLive)), lo = Math.max(1, Math.max(...monDead));
+  const all = Math.max(1, Math.max(...monAll));
+  /* `unit` = animalia bakoitzak hartzen duen lekua, tartea barne. Pilarik
+     altuenak kabitu behar du, eta hortik ateratzen da altuera — ez
+     alderantziz. Hala ez dago zutaberik oihaletik ateratzen denik. */
+  const unit = Math.min(
+    cfg.split === "none" ? topRoom / all : topRoom / hi,
+    cfg.split === "none" ? 4.0 : botRoom / lo, 4.0);
+  const h = Math.max(0.6, unit * 0.68), gap = unit - h;
+  const up = new Float32Array(NM), down = new Float32Array(NM);
+
+  for (let i = 0; i < N; i++){
+    const m = R_mon[i];
+    const x = P.pl + m * colW + (colW - w) / 2;
+    let above;
+    if (cfg.split === "none") above = true;
+    else if (cfg.split === "state") above = !!R_liv[i];
+    else above = isFree(i);                       // "fate": askatuak bakarrik gainean
+    toX[i] = x; toW[i] = w; toH[i] = h;
+    if (above){ up[m] += h + gap; toY[i] = P.lineY - up[m]; }
+    else { toY[i] = P.lineY + down[m]; down[m] += h + gap; }
+
+    grp[i] = cfg.mark === "young" ? (CG[R_cau[i]] === "young" ? 1 : 0)
+           : cfg.mark === "remove" ? (CG[R_cau[i]] === "remove" ? 1 : 0)
+           : cfg.split === "fate" ? (isFree(i) ? 1 : 2)
+           : cfg.split === "state" ? (R_liv[i] ? 0 : 2)
+           : 0;
+  }
+}
+
+const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+/* Kolore-sistemak bi kolore ditu: hezurra (animalia bat) eta oxidoa (ez zen
+   bizirik atera). Azpimarratzeko ez da hirugarren kolore bat sartzen —
+   gainerakoa ilundu egiten da. Hala sistemak bere esanahia gordetzen du. */
+const COL = ["rgba(140,160,143,.55)", "#efe9dc", "#c0552f"];
+const COL_DIM = ["rgba(140,160,143,.13)", "#efe9dc", "rgba(192,85,47,.16)"];
+
+function ensurePlot(){
+  if (sizing || !plot) return;
+  const r = wallCv.getBoundingClientRect();
+  if (Math.abs(r.width - plot.W) > .5 || Math.abs(r.height - plot.H) > .5) sizeStage();
+}
+
+function paintWall(){
+  ensurePlot();
+  const P = plot, t = ease(tween), T_ = T[lang];
+  const ctx = wallCtx;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, wallCv.width, wallCv.height); ctx.restore();
+
+  const cfg = SCENE[stepIx];
+  const pal = cfg.mark === "none" ? COL : COL_DIM;
+  for (let g = 0; g < 3; g++){
+    const idx = gIdx[g], n = gLen[g];
+    if (!n) continue;
+    ctx.fillStyle = pal[g];
+    ctx.beginPath();
+    for (let k = 0; k < n; k++){
+      const i = idx[k];
+      ctx.rect(fromX[i] + (toX[i]-fromX[i])*t, fromY[i] + (toY[i]-fromY[i])*t,
+               fromW[i] + (toW[i]-fromW[i])*t, fromH[i] + (toH[i]-fromH[i])*t);
+    }
+    ctx.fill();
+  }
+
+  /* MARRA. Lehen urratsean ez dago: oraindik ez du ezer esan nahi. */
+  if (cfg.split !== "none"){
+    const a = Math.min(1, t * 1.6);
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.strokeStyle = "#efe9dc"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(P.pl * .4, P.lineY); ctx.lineTo(P.W - P.pr * .4, P.lineY); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* Urte-markak, azpian. */
+  ctx.fillStyle = "rgba(140,160,143,.8)";
+  ctx.font = `500 ${Math.max(11, P.W*.0095)}px ${READ}`;
+  ctx.textAlign = "center";
+  const colW = P.iw / NM;
+  YEARS.forEach(y => {
+    const m0 = (y - YEARS[0]) * 12;
+    ctx.fillText(y, P.pl + (m0 + 6) * colW, P.H - 16);
+  });
+}
+
+function setStep(ix, instant){
+  ix = Math.max(0, Math.min(SCENE.length - 1, ix));
+  const t = ease(tween);
+  for (let i = 0; i < N; i++){
+    fromX[i] += (toX[i]-fromX[i])*t; fromY[i] += (toY[i]-fromY[i])*t;
+    fromW[i] += (toW[i]-fromW[i])*t; fromH[i] += (toH[i]-fromH[i])*t;
+  }
+  stepIx = ix;
+  buildTarget(SCENE[ix], plot);
+  regroup();
+  tween = (instant || REDUCED) ? 1 : 0;
+  updateHud();
+  if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+  lastTs = 0;
+  if (tween < 1) rafId = requestAnimationFrame(loop); else paintWall();
+}
+
+function loop(ts){
+  const now = ts || performance.now();
+  if (!lastTs) lastTs = now;
+  tween = Math.min(1, tween + (now - lastTs) / 900);
+  lastTs = now;
+  paintWall();
+  rafId = tween < 1 ? requestAnimationFrame(loop) : null;
+}
+
+function updateHud(){
+  const t = T[lang];
+  $("#hudYear").textContent = YEARS[0] + "–" + YEARS[YEARS.length-1];
+  $("#hudN").textContent = num(N);
+  $("#hudAlive").textContent = num(liveN);
+  $("#hudFree").textContent = num(freeN);
+  wallCv.setAttribute("aria-label",
+    `${t.stageTitle} — ${num(N)} ${t.rN}, ${num(liveN)} ${t.rAlive}, ${num(freeN)} ${t.rFree}`);
+}
+
+function stagePads(){
+  if (window.innerWidth >= 821) return {pr:.34, line:.46};
+  let card = 0;
+  document.querySelectorAll(".step > div").forEach(el => card = Math.max(card, el.offsetHeight));
+  const h = wallCv.getBoundingClientRect().height || window.innerHeight || 800;
+  return {pl:.04, pr:.04, line: Math.max(.22, Math.min(.42, (h - card - h*.09) / h * .62))};
+}
+
+function sizeStage(){
+  sizing = true;
+  plot = measure(wallCv, wallCtx, stagePads());
+  buildTarget(SCENE[stepIx], plot);
+  regroup();
+  fromX.set(toX); fromY.set(toY); fromW.set(toW); fromH.set(toH);
+  tween = 1; sizing = false;
+  paintWall();
+}
+
+/* --- goiburuko horma: eszena bera, isilago, testuaren atzean ------------- */
+let heroPrep = null;
+function prepHero(){
+  const P = measure(heroCv, heroCtx, {pl:.03, pr:.03, line: parseFloat(cssv("--line-y")) / 100});
+  heroPrep = {P};
+}
+function paintHero(prog){
+  if (!heroPrep) prepHero();
+  const {P} = heroPrep;
+  const colW = P.iw / NM, w = Math.max(1.1, colW - 1.4);
+  heroCtx.clearRect(0, 0, P.W, P.H);
+  const up = new Float32Array(NM), down = new Float32Array(NM);
+  const h = Math.max(1, Math.min(2.4, (P.H * .22) / Math.max(...monAll) * 2));
+  for (let g = 0; g < 2; g++){
+    /* Goiburuan hormak ehundura bat izan behar du, ez protagonista:
+       testuak irakurgarri geratu behar du gainean. */
+    heroCtx.fillStyle = g ? "rgba(192,85,47,.34)" : "rgba(239,233,220,.20)";
+    heroCtx.beginPath();
+    for (let i = 0; i < N; i++){
+      const live = !!R_liv[i];
+      if ((g === 0) !== live) continue;
+      const m = R_mon[i], x = P.pl + m * colW + (colW - w) / 2;
+      let y;
+      if (live){ up[m] += (h + .5) * prog; y = P.lineY - up[m]; }
+      else { y = P.lineY + down[m]; down[m] += (h + .5) * prog; }
+      heroCtx.rect(x, y, w, h);
+    }
+    heroCtx.fill();
+  }
+}
+function runHero(){
+  prepHero();
+  if (REDUCED){ paintHero(1); return; }
+  const t0 = performance.now();
+  (function frame(ts){
+    const p = Math.min(1, (ts - t0) / 1700);
+    paintHero(ease(p));
+    if (p < 1) requestAnimationFrame(frame);
+  })(t0);
+}
+
+const READ = '"Source Serif 4", Georgia, serif';
+
+/* --- urratsen testua eta scroll-behatzailea ------------------------------ */
+function buildSteps(){
+  const n = T[lang].steps.length;
+  $("#steps").innerHTML = T[lang].steps.map((s, i) =>
+    `<div class="step" data-ix="${i}"><div>` +
+    `<p class="stepno">${i + 1}/${n}</p><h3>${s.h}</h3><p>${s.p}</p></div></div>`).join("");
+  observeSteps();
+}
+let stepObs = null;
+function observeSteps(){
+  if (stepObs) stepObs.disconnect();
+  stepObs = new IntersectionObserver(entries => {
+    for (const e of entries){
+      e.target.classList.toggle("on", e.isIntersecting);
+      if (!e.isIntersecting) continue;
+      const ix = +e.target.dataset.ix;
+      if (ix !== stepIx) setStep(ix);
+    }
+  }, {rootMargin: "-45% 0px -45% 0px", threshold: 0});
+  document.querySelectorAll(".step").forEach(el => stepObs.observe(el));
+}
+
+/* ===========================================================================
+   Bizirauteko eskailera
+=========================================================================== */
+function paintLadder(){
+  const t = T[lang];
+  const max = Math.max(...LADDER.map(e => e.free / e.n));
+  $("#ladder").innerHTML = LADDER.map((e, k) => {
+    const p = e.free / e.n * 100;
+    const cl = k === 0 ? " best" : (p < 10 ? " worst" : "");
+    return `<div class="lrow${cl}">` +
+      `<span class="why">${esc(causeName(CAUSES[e.k], lang))}</span>` +
+      `<span class="track"><i style="width:${(p / (max*100) * 100).toFixed(1)}%"></i></span>` +
+      `<span class="pc">${pc(p)}</span>` +
+      `<span class="n">${num(e.free)} / ${num(e.n)}</span></div>`;
+  }).join("");
+}
+
+/* ===========================================================================
+   Urteko pultsua — hilabeteak, bost urte bata bestearen gainean
+=========================================================================== */
+const PW = 1000;
+let PH = 340, PPL = 56, PPR = 20, PPT = 24, PPB = 46, PIW = 924, PIH = 270, PK = 1;
+const psc = n => Math.round(n * PK * 10) / 10;
+
+function pulseGeom(){
+  const w = $("#pulse").getBoundingClientRect().width || PW;
+  PK = Math.min(3, Math.max(1, 1000 / w));
+  PH = Math.round(340 + (PK - 1) * 180);
+  PPL = Math.round(22 + 34 * PK); PPT = Math.round(10 + 14 * PK); PPB = Math.round(16 + 30 * PK);
+  PIW = PW - PPL - PPR; PIH = PH - PPT - PPB;
+  $("#pulse").setAttribute("viewBox", `0 0 ${PW} ${PH}`);
+}
+
+const MONTH = (() => {
+  const all = new Int32Array(12), young = new Int32Array(12), rem = new Int32Array(12);
+  for (let i = 0; i < N; i++){
+    const m = +DATES[i].slice(5,7) - 1;
+    all[m]++;
+    if (CG[R_cau[i]] === "young") young[m]++;
+    if (CG[R_cau[i]] === "remove") rem[m]++;
+  }
+  return {all, young, rem};
+})();
+
+function drawPulse(){
+  pulseGeom();
+  const t = T[lang];
+  const max = Math.max(...MONTH.all) * 1.08;
+  const X = m => PPL + (m + .5) / 12 * PIW;
+  const Y = v => PPT + PIH - v / max * PIH;
+  const bw = PIW / 12 * .62;
+  const grid = cssv("--rule"), muted = cssv("--muted"), ink = cssv("--ink");
+  const c1 = cssv("--night-3"), c2 = cssv("--oxide-soft");
+  let s = "";
+
+  const step = Math.pow(10, Math.floor(Math.log10(max / 4)));
+  const st = Math.ceil(max / 4 / step) * step;
+  for (let v = 0; v <= max; v += st){
+    s += `<line x1="${PPL}" y1="${Y(v).toFixed(1)}" x2="${PW-PPR}" y2="${Y(v).toFixed(1)}" stroke="${grid}" stroke-width="${psc(1)}"/>`;
+    s += `<text x="${PPL-psc(10)}" y="${(Y(v)+psc(4)).toFixed(1)}" text-anchor="end" font-size="${psc(12)}" fill="${muted}" font-family='${READ}'>${num(v)}</text>`;
+  }
+  for (let m = 0; m < 12; m++){
+    const x = X(m) - bw/2;
+    s += `<rect x="${x.toFixed(1)}" y="${Y(MONTH.all[m]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(PPT+PIH-Y(MONTH.all[m])).toFixed(1)}" fill="${c1}" fill-opacity=".30"/>`;
+    s += `<rect x="${x.toFixed(1)}" y="${Y(MONTH.young[m]).toFixed(1)}" width="${(bw*.52).toFixed(1)}" height="${(PPT+PIH-Y(MONTH.young[m])).toFixed(1)}" fill="${c1}"/>`;
+    s += `<rect x="${(x+bw*.52).toFixed(1)}" y="${Y(MONTH.rem[m]).toFixed(1)}" width="${(bw*.48).toFixed(1)}" height="${(PPT+PIH-Y(MONTH.rem[m])).toFixed(1)}" fill="${c2}"/>`;
+    s += `<text x="${X(m).toFixed(1)}" y="${PH-PPB+psc(20)}" text-anchor="middle" font-size="${psc(12)}" fill="${muted}" font-family='${READ}'>${t.mon[m]}</text>`;
+  }
+  s += `<line x1="${PPL}" y1="${PPT+PIH}" x2="${PW-PPR}" y2="${PPT+PIH}" stroke="${grid}" stroke-width="${psc(1)}"/>`;
+  s += `<rect id="pcursor" x="0" y="${PPT}" width="${bw.toFixed(1)}" height="${PIH}" fill="${ink}" fill-opacity=".08" visibility="hidden"/>`;
+  s += `<rect id="phit" x="${PPL}" y="${PPT}" width="${PIW}" height="${PIH}" fill="transparent" style="cursor:crosshair"/>`;
+
+  const svg = $("#pulse");
+  svg.innerHTML = s;
+  svg.setAttribute("aria-hidden", "true");
+  $("#pulsebox").setAttribute("aria-label", t.yearTitle);
+  const hit = svg.querySelector("#phit");
+  hit.addEventListener("pointermove", pulseMove);
+  hit.addEventListener("pointerdown", pulseMove);
+  hit.addEventListener("pointerleave", hidePulseTip);
+
+  $("#pulseLegend").innerHTML =
+    `<span><i style="background:${c1};opacity:.3"></i>${t.legAll}</span>` +
+    `<span><i style="background:${c1}"></i>${t.legYoung}</span>` +
+    `<span><i style="background:${c2}"></i>${t.legRemove}</span>`;
+}
+
+let pulseM = -1;
+function hidePulseTip(){ pulseM = -1; $("#tipP").classList.remove("on");
+  const c = document.getElementById("pcursor"); if (c) c.setAttribute("visibility","hidden"); }
+function pulseMove(e){
+  const svg = $("#pulse"), r = svg.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * PW;
+  showMonth(Math.floor((x - PPL) / PIW * 12));
+}
+function showMonth(m){
+  if (m < 0 || m > 11){ hidePulseTip(); return; }
+  pulseM = m;
+  const t = T[lang], tip = $("#tipP"), svg = $("#pulse"), r = svg.getBoundingClientRect();
+  tip.innerHTML = `<div>${t.tipMon.replace("{m}", t.mon[m]).replace("{n}", num(MONTH.all[m]))}</div>` +
+    `<div><em>${num(MONTH.young[m])}</em> ${t.legYoung.toLowerCase()} · ${num(MONTH.rem[m])} ${t.legRemove.toLowerCase()}</div>`;
+  tip.classList.add("on");
+  const bw = PIW / 12 * .62, X = PPL + (m + .5) / 12 * PIW;
+  const cur = document.getElementById("pcursor");
+  if (cur){ cur.setAttribute("x", (X - bw/2).toFixed(1)); cur.setAttribute("visibility","visible"); }
+  const box = $("#pulsebox").getBoundingClientRect();
+  const px = r.left - box.left + X / PW * r.width;
+  const tw = tip.offsetWidth;
+  tip.style.left = Math.max(4, Math.min(box.width - tw - 4, px - tw/2)) + "px";
+  tip.style.top = Math.round(r.height * .12) + "px";
+}
+
+/* ===========================================================================
+   Espezie-taula
+=========================================================================== */
+const COLL = new Intl.Collator("es", {sensitivity:"base"});
+const COLS = [
+  {k:"sp",   t:"thSp"},
+  {k:"cls",  t:"thCls"},
+  {k:"n",    t:"thN",    n:true},
+  {k:"live", t:"thLive", n:true},
+  {k:"free", t:"thFree", n:true},
+  {k:"fate", t:"thFate"}
+];
+let lastRows = [];
+
+function matchSp(e, needle){
+  if (!needle) return true;
+  const s = SP[e.i];
+  return (s.eu||"").toLowerCase().includes(needle) || (s.es||"").toLowerCase().includes(needle)
+      || (s.sci||"").toLowerCase().includes(needle);
+}
+function passFilt(e){
+  const c = clsOf(e.i);
+  return filt === "all" || (filt === "bird" && c === CLS_BIRD)
+      || (filt === "mam" && c === CLS_MAM) || (filt === "rep" && c === CLS_REP);
+}
+
+function paintTable(){
+  const t = T[lang], needle = q.trim().toLowerCase();
+  let rows = BYSP.filter(e => passFilt(e) && matchSp(e, needle));
+  const cmp = {
+    sp:  (a,b) => COLL.compare(spName(SP[a.i],lang), spName(SP[b.i],lang)),
+    cls: (a,b) => COLL.compare(clsOf(a.i), clsOf(b.i)),
+    n:   (a,b) => a.n - b.n,
+    live:(a,b) => a.live - b.live,
+    free:(a,b) => a.free - b.free,
+    fate:(a,b) => (a.free/(a.n||1)) - (b.free/(b.n||1))
+  }[sortKey];
+  rows = rows.slice().sort((a,b) => sortDir * cmp(a,b) || b.n - a.n);
+  lastRows = rows;
+
+  $("#spTable thead").innerHTML = "<tr>" + COLS.map(c => {
+    const on = sortKey === c.k, arrow = on ? (sortDir < 0 ? "▾" : "▴") : "";
+    return `<th class="${c.n ? "n " : ""}s${on ? " on" : ""}" aria-sort="${on ? (sortDir<0?"descending":"ascending") : "none"}">` +
+      `<button type="button" data-sort="${c.k}" aria-label="${esc(t.sortBy.replace("{c}",t[c.t]).replace("{d}", (on&&sortDir>0)?t.sortDesc:t.sortAsc))}">` +
+      `${t[c.t]}<span aria-hidden="true">${arrow}</span></button></th>`;
+  }).join("") + "</tr>";
+
+  const mx = Math.max(1, ...rows.map(e => e.n));
+  $("#spTable tbody").innerHTML = rows.map(e => {
+    const s = SP[e.i];
+    const f = e.n ? e.free / e.n * 100 : 0, l = e.n ? e.lost / e.n * 100 : 0;
+    return `<tr><td>${esc(spName(s, lang))}${s.sci ? `<span class="sci">${esc(s.sci)}</span>` : ""}</td>` +
+      `<td>${esc(subName(e.i))}</td>` +
+      `<td class="n">${num(e.n)}</td>` +
+      `<td class="n">${num(e.live)}</td>` +
+      `<td class="n">${num(e.free)}</td>` +
+      `<td><span class="bar" aria-hidden="true"><i class="f" style="width:${f.toFixed(1)}%"></i>` +
+      `<i class="d" style="width:${l.toFixed(1)}%"></i></span></td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="empty">${t.tblEmpty}</td></tr>`;
+
+  const tot = rows.reduce((a,e) => a + e.n, 0);
+  $("#qcount").textContent = t.qCount.replace("{n}", num(rows.length)).replace("{m}", num(tot));
+  $("#csv").disabled = !rows.length;
+  document.querySelectorAll("[data-filt]").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.filt === filt)));
+  $("#tblLegend").innerHTML =
+    `<span><i style="background:${cssv("--night-3")}"></i>${t.legRowFree}</span>` +
+    `<span><i style="background:${cssv("--oxide-soft")}"></i>${t.legRowLost}</span>`;
+}
+const subName = i => { const s = RAW.spSub[i]; return s >= 0 ? SUBS[s] : (clsOf(i) || "—"); };
+
+function downloadCsv(){
+  const es = lang === "es";
+  const head = es
+    ? ["especie_es","especie_eu","nombre_cientifico","grupo","llegados","vivos","liberados","muertos_o_sacrificados"]
+    : ["espezie_es","espezie_eu","izen_zientifikoa","taldea","iritsiak","bizirik","askatuak","hil_edo_sakrifikatuak"];
+  const qq = v => `"${String(v == null ? "" : v).replace(/"/g,'""')}"`;
+  const lines = [head.join(",")];
+  for (const e of lastRows){
+    const s = SP[e.i];
+    lines.push([qq(s.es), qq(s.eu), qq(s.sci), qq(subName(e.i)), e.n, e.live, e.free, e.lost].join(","));
+  }
+  const blob = new Blob(["﻿" + lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `fauna-bizkaia-${es ? "especies" : "espezieak"}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* ===========================================================================
+   SEI ANIMALIAK — biraketa aurre-errendatua
+   36 fotograma espezieko, Blenderren Cycles-/EEVEE-rekin eginak. Ez da WebGL
+   bat: irudi-sekuentzia bat da, arrastatuz aurrera eta atzera doana. Hala
+   argiztapena eta materialak errendatze-kalitatekoak dira, eta orriak ez du
+   kanpo-liburutegirik behar.
+=========================================================================== */
+const FRAMES = 36;
+/* Modeloa eta erregistroko espeziea ez dira beti berdinak. Hontza eta usoa
+   bai; dortokarena ez: `Mauremys leprosa`-ren eskanerik ez dago inon, eta
+   `Emys orbicularis` erakusten dugu — Iberiako beste ur-dortoka bertakoa,
+   putzu beretan bizi dena eta itxura berekoa. Hori esan egin behar da, ez
+   ezkutatu: `shows` eremuak zer ikusten den dio, `sp`-k zer zen. */
+const MODELS = {
+  "Bubo bubo":      {key:"hontza",  shows:"Bubo bubo"},
+  "Columba libia":  {key:"usoa",    shows:"Columba livia"},
+  "Mauremys leprosa":{key:"dortoka", shows:"Emys orbicularis"}
+};
+const SIXDATA = SIX.map(i => {
+  const sp = SP[R_sp[i]], m = MODELS[sp.sci] || null;
+  return {i, sp, date: DATES[i],
+    from: R_mun[i] >= 0 ? MUNS[R_mun[i]] : null,
+    to:   R_rel[i] >= 0 ? MUNS[R_rel[i]] : null,
+    model: m ? m.key : null,
+    shows: m ? m.shows : null,
+    swapped: !!m && m.shows !== sp.sci};
+});
+
+const cache = {};                 // espeziea -> Image[]
+let sixIx = 0, frame = 0, spin = null, touched = false;
+const vcv = $("#viewCv"), vctx = vcv.getContext("2d");
+
+function loadModel(key){
+  if (cache[key]) return cache[key];
+  const imgs = [];
+  for (let f = 0; f < FRAMES; f++){
+    const im = new Image();
+    im.decoding = "async";
+    im.src = `img/${key}/${String(f).padStart(2,"0")}.webp`;
+    im.onload = () => { if (MODELS[SIXDATA[sixIx].sp.sci] === key) drawFrame(); };
+    imgs.push(im);
+  }
+  cache[key] = imgs;
+  return imgs;
+}
+
+function sizeViewer(){
+  const r = vcv.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vcv.width = Math.round(r.width * dpr); vcv.height = Math.round(r.height * dpr);
+  vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawFrame();
+}
+
+function drawFrame(){
+  const a = SIXDATA[sixIx];
+  if (!a || !a.model) return;
+  const imgs = cache[a.model];
+  if (!imgs) return;
+  const im = imgs[((frame % FRAMES) + FRAMES) % FRAMES];
+  const W = vcv.width / (vcv.width / vcv.getBoundingClientRect().width || 1);
+  const r = vcv.getBoundingClientRect();
+  vctx.clearRect(0, 0, r.width, r.height);
+  if (!im || !im.complete || !im.naturalWidth) return;
+  /* Irudia osorik sartu, proportzioa galdu gabe. */
+  const s = Math.min(r.width / im.naturalWidth, r.height / im.naturalHeight) * 0.94;
+  const w = im.naturalWidth * s, h = im.naturalHeight * s;
+  vctx.drawImage(im, (r.width - w) / 2, (r.height - h) / 2, w, h);
+}
+
+function selectAnimal(ix){
+  sixIx = ((ix % SIXDATA.length) + SIXDATA.length) % SIXDATA.length;
+  const a = SIXDATA[sixIx];
+  if (a.model) loadModel(a.model);
+  frame = 0;
+  paintSixList(); paintRecord(); drawFrame();
+  const t = T[lang];
+  $("#viewer").setAttribute("aria-label", t.ariaViewer.replace("{s}", spName(a.sp, lang)));
+}
+
+function paintSixList(){
+  const t = T[lang];
+  $("#sixList").innerHTML = SIXDATA.map((a, k) =>
+    `<li><button type="button" data-six="${k}" aria-current="${k === sixIx}">` +
+    `<span class="ix">${k + 1}</span>` +
+    (a.model ? `<img src="img/${a.model}/00.webp" alt="" loading="lazy">` : "") +
+    `<span><span class="nm">${esc(spName(a.sp, lang))}</span>` +
+    `<span class="yr">${a.date.slice(0,4)} · ${esc((a.from||"").split("/")[0])}</span></span>` +
+    `</button></li>`).join("");
+}
+
+function paintRecord(){
+  const t = T[lang], a = SIXDATA[sixIx];
+  const place = v => v ? esc(v.split("/")[0]) : "—";
+  const same = a.from && a.to && a.from === a.to;
+  $("#sixRec").innerHTML =
+    `<h3>${esc(spName(a.sp, lang))}</h3><span class="sci">${esc(a.sp.sci)}</span>` +
+    `<dl>` +
+    `<div><dt>${t.recDate}</dt><dd>${a.date}</dd></div>` +
+    `<div><dt>${t.recFrom}</dt><dd>${place(a.from)}</dd></div>` +
+    `<div><dt>${t.recTo}</dt><dd><b>${place(a.to)}</b>` +
+      (same ? `<br><span class="back">${t.recSame}</span>` : "") + `</dd></div>` +
+    `<div><dt>${t.recWhy}</dt><dd>${t.recWhyVal}</dd></div>` +
+    `<div><dt>${t.recEnd}</dt><dd class="back">${t.recEndVal}</dd></div>` +
+    `</dl>`;
+  /* Oinoharrak zer ikusten den dio, ez zer zen: biak bat ez datozenean,
+     esplizitu. */
+  $("#viewCap").innerHTML = a.swapped
+    ? `<span class="swap">${t.capShows.replace("{s}", `<i>${esc(a.shows)}</i>`)}</span>`
+    : `<span class="sci">${esc(a.shows || a.sp.sci)}</span> · 360°`;
+}
+
+function stopSpin(){ if (spin){ cancelAnimationFrame(spin); spin = null; } }
+function idleSpin(){
+  if (REDUCED || touched) return;
+  let last = performance.now(), acc = 0;
+  (function step(ts){
+    acc += (ts - last) / 1000; last = ts;
+    if (acc > 0.16){ acc = 0; frame = (frame + 1) % FRAMES; drawFrame(); }
+    spin = touched ? null : requestAnimationFrame(step);
+  })(last);
+}
+
+function wireViewer(){
+  const v = $("#viewer");
+  let dragging = false, lastX = 0, moved = 0;
+  const mark = () => {
+    if (touched) return;
+    touched = true; stopSpin();
+    $("#viewHint").classList.add("gone");
+  };
+  v.addEventListener("pointerdown", e => {
+    dragging = true; lastX = e.clientX; moved = 0;
+    v.setPointerCapture(e.pointerId); mark();
+  });
+  v.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX;
+    moved += Math.abs(dx);
+    /* Oihalaren zabalera osoa = bira oso bat. */
+    const per = v.getBoundingClientRect().width / FRAMES;
+    if (Math.abs(dx) >= per){
+      frame = (frame + Math.round(dx / per) + FRAMES * 4) % FRAMES;
+      lastX = e.clientX; drawFrame();
+    }
+  });
+  const end = () => { dragging = false; };
+  v.addEventListener("pointerup", end);
+  v.addEventListener("pointercancel", end);
+  v.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight"){ mark(); frame = (frame + 1) % FRAMES; drawFrame(); }
+    else if (e.key === "ArrowLeft"){ mark(); frame = (frame + FRAMES - 1) % FRAMES; drawFrame(); }
+    else if (e.key === "ArrowDown"){ mark(); selectAnimal(sixIx + 1); }
+    else if (e.key === "ArrowUp"){ mark(); selectAnimal(sixIx - 1); }
+    else return;
+    e.preventDefault();
+  });
+  $("#spinL").addEventListener("click", () => { mark(); frame = (frame + FRAMES - 3) % FRAMES; drawFrame(); });
+  $("#spinR").addEventListener("click", () => { mark(); frame = (frame + 3) % FRAMES; drawFrame(); });
+  $("#sixList").addEventListener("click", e => {
+    const b = e.target.closest("[data-six]");
+    if (b){ mark(); selectAnimal(+b.dataset.six); }
+  });
+  if (window.ResizeObserver) new ResizeObserver(sizeViewer).observe(v);
+}
+
+/* ===========================================================================
+   Testu finkoa
+=========================================================================== */
+function paintStatic(){
+  const t = T[lang];
+  document.documentElement.lang = lang;
+  document.title = t.titleTag;
+  document.querySelectorAll("[data-i18n-aria]").forEach(el =>
+    el.setAttribute("aria-label", t[el.dataset.i18nAria]));
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const v = t[el.dataset.i18n];
+    if (typeof v === "string") el.innerHTML = v;
+  });
+  document.querySelectorAll("[data-lang]").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  $("#prose").innerHTML = t.prose.map(p => `<p>${p}</p>`).join("");
+  $("#endBody").innerHTML = t.endBody.map(p => `<p>${p}</p>`).join("");
+  $("#method").innerHTML = t.method.map(m => `<div><h4>${m.h}</h4>${m.b}</div>`).join("");
+  $("#q").placeholder = t.qPlaceholder;
+  document.querySelectorAll("[data-filt]").forEach(b => {
+    const k = b.dataset.filt;
+    b.querySelector("span").textContent = t["f" + k[0].toUpperCase() + k.slice(1)];
+  });
+  $("#csv").querySelector("span").textContent = t.csv;
+  paintSixList(); paintRecord();
+  $("#share").querySelector("span").textContent = t.share;
+  $("#qclear").setAttribute("aria-label", t.qClear);
+}
+
+/* ===========================================================================
+   Egoera eta URLa
+=========================================================================== */
+const STORE = "fauna.lang";
+let urlTimer = null;
+function stateHash(){
+  const h = new URLSearchParams();
+  h.set("lang", lang);
+  if (filt !== "all") h.set("show", filt);
+  if (q.trim()) h.set("q", q.trim());
+  return "#" + h.toString();
+}
+function writeUrl(){
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(() => history.replaceState(null, "", stateHash()), 260);
+}
+function readUrl(){
+  const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const l = h.get("lang"); if (l === "eu" || l === "es") lang = l;
+  const f = h.get("show"); if (["bird","mam","rep"].includes(f)) filt = f;
+  const qq = h.get("q"); if (qq) q = qq;
+}
+function initLang(){
+  let stored = null;
+  try { stored = localStorage.getItem(STORE); } catch (e) {}
+  if (stored === "eu" || stored === "es") lang = stored;
+  else if ((navigator.language || "").toLowerCase().startsWith("es")) lang = "es";
+  readUrl();
+}
+function setLang(l){
+  if (l === lang) return;
+  lang = l;
+  try { localStorage.setItem(STORE, l); } catch (e) {}
+  renderAll(); buildSteps(); updateHud(); paintWall(); writeUrl();
+}
+
+function wire(){
+  document.querySelectorAll("[data-lang]").forEach(b =>
+    b.addEventListener("click", () => setLang(b.dataset.lang)));
+  document.querySelectorAll("[data-filt]").forEach(b => b.addEventListener("click", () => {
+    filt = b.dataset.filt; paintTable(); writeUrl();
+  }));
+  let deb = null;
+  $("#q").addEventListener("input", e => {
+    clearTimeout(deb);
+    const v = e.target.value;
+    deb = setTimeout(() => { q = v; paintTable(); writeUrl(); }, 140);
+  });
+  $("#qclear").addEventListener("click", () => { $("#q").value=""; q=""; paintTable(); writeUrl(); $("#q").focus(); });
+  $("#spTable thead").addEventListener("click", e => {
+    const b = e.target.closest("[data-sort]");
+    if (!b) return;
+    const k = b.dataset.sort;
+    if (k === sortKey) sortDir = -sortDir;
+    else { sortKey = k; sortDir = (k === "sp" || k === "cls") ? 1 : -1; }
+    paintTable();
+  });
+  $("#csv").addEventListener("click", downloadCsv);
+  $("#pulsebox").addEventListener("keydown", e => {
+    let m = pulseM;
+    if (e.key === "ArrowRight") m = m < 0 ? 0 : Math.min(11, m + 1);
+    else if (e.key === "ArrowLeft") m = m < 0 ? 11 : Math.max(0, m - 1);
+    else if (e.key === "Escape"){ hidePulseTip(); return; }
+    else return;
+    e.preventDefault(); showMonth(m);
+  });
+  $("#pulsebox").addEventListener("blur", hidePulseTip);
+
+  $("#share").addEventListener("click", async () => {
+    const btn = $("#share"), label = btn.querySelector("span"), was = label.textContent;
+    const url = location.origin + location.pathname + location.search + stateHash();
+    try { await navigator.clipboard.writeText(url); } catch (e) { return; }
+    label.textContent = T[lang].shared; btn.classList.add("ok");
+    setTimeout(() => { label.textContent = was; btn.classList.remove("ok"); }, 1800);
+  });
+
+  window.addEventListener("hashchange", () => {
+    const before = [lang, filt, q].join("|");
+    readUrl();
+    if ([lang, filt, q].join("|") === before) return;
+    $("#q").value = q; renderAll(); buildSteps(); updateHud();
+  });
+
+  let rz = null;
+  const remeasure = () => {
+    clearTimeout(rz);
+    rz = setTimeout(() => { sizeStage(); prepHero(); paintHero(1); drawPulse(); }, 160);
+  };
+  window.addEventListener("resize", remeasure);
+  window.addEventListener("orientationchange", remeasure);
+  if (window.ResizeObserver) new ResizeObserver(remeasure).observe($(".stage-gfx"));
+}
+
+function renderAll(){
+  paintStatic();
+  paintLadder();
+  drawPulse();
+  paintTable();
+}
+
+initLang();
+wire();
+$("#q").value = q;
+renderAll();
+buildSteps();
+sizeStage();
+setStep(0, true);
+runHero();
+wireViewer();
+selectAnimal(0);
+sizeViewer();
+idleSpin();
+
+/* Letra-tipoak kargatu arte canvas-eko etiketak ordezko batekin marrazten
+   dira: kargatzean berriro marraztu, bestela neurriak ez datoz bat. */
+if (document.fonts && document.fonts.ready){
+  document.fonts.ready.then(() => { paintWall(); drawPulse(); });
+}
+
+})();
+</script>
