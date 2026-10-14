@@ -1,5 +1,7 @@
 # Zer iristen den
 
+**▶ https://berezuma.github.io/faunabizkaia/**
+
 Bizkaiko basa-faunaren errekuperazio-zentrora **7.649 animalia** iritsi dira bost
 urtean, 294 espezietakoak. Ia erdiak hilda. Eta bizirik iristen direnetatik,
 zergatik iritsi ziren erabakitzen du bizirik aterako diren.
@@ -62,18 +64,21 @@ Kontuan hartzekoak:
 ```
 python3 build.py      # datuak jaitsi (~7 MB data/raw.json)
 python3 compact.py    # data/fauna.json sortu
-python3 assemble.py   # ../zer-iristen-den.html muntatu
-node make-og.js       # ../zer-iristen-den-og.png sortu
+python3 assemble.py   # index.html muntatu
+node make-og.js       # zer-iristen-den-og.png sortu
 ```
 
 Lehen bi urratsak behin bakarrik behar dira: `data/fauna.json` biltegian dago.
 
+Partekatzeko etiketek URL absolutua behar dute, eta ostatu-helbidetik
+hartzen da:
+
 ```
-SITE_URL=https://adibidea.eus/fauna python3 assemble.py
+SITE_URL=https://berezuma.github.io/faunabizkaia python3 assemble.py
 ```
 
 Hutsik utziz gero, URL absolutua behar duten etiketak (`og:url`, `canonical`)
-kendu egiten dira.
+kendu egiten dira — okerreko URL bat baino hobe da bat ere ez.
 
 ## Hiru dimentsioko irudiak
 
@@ -99,7 +104,7 @@ Errendatzeak `renders/` karpetan daude (PNG, 720×720) eta weberako bertsioak
 ## Fitxategiak
 
 ```
-zer-iristen-den.html       orri osoa, fitxategi bakarrean (369 KB)
+index.html                 orri osoa, fitxategi bakarrean (370 KB)
 zer-iristen-den-og.png     partekatzeko txartela
 img/                       biraketen irudiak (108 WebP, 2 MB)
 renders/                   Blenderren errendatze gordinak (108 PNG, 33 MB)

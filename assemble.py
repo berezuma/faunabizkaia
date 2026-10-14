@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Orria muntatu: burua + gorputza + datuak + gidoia fitxategi bakarrean.
 
+Irteera `index.html` da: GitHub Pages-ek hori bilatzen du erroan, eta hala
+URLak ez du fitxategi-izenik behar.
+
 Partekatzeko etiketek URL absolutua behar dute. Non ostatatuko den jakin arte
 ez dago asmatzerik, beraz `SITE_URL` ingurune-aldagaitik hartzen da:
 
@@ -12,7 +15,7 @@ Hutsik badago, URL absolutua ezinbestean behar duten etiketak (`og:url`,
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "zer-iristen-den.html")
+OUT = os.path.join(HERE, "index.html")
 BASE = os.environ.get("SITE_URL", "").rstrip("/")
 
 def read(name):

@@ -14,7 +14,7 @@ const {spawn} = require("child_process");
 const fs = require("fs"), path = require("path");
 
 const HERE = __dirname;
-const PAGE = "file://" + path.resolve(HERE, "zer-iristen-den.html");
+const PAGE = "file://" + path.resolve(HERE, "index.html");
 const OUT  = path.resolve(HERE, "zer-iristen-den-og.png");
 const W = 1200, H = 630;
 
