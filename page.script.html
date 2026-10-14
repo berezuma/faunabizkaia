@@ -333,6 +333,18 @@ const CAUSE_EU = {
   "Inanición":"Goseteak", "Ahogamiento":"Itotzea", "Anzuelo":"Amua"
 };
 const causeName = (c, l) => (l === "eu" && CAUSE_EU[c]) ? CAUSE_EU[c] : c;
+
+/* Azpiklaseak ere gaztelaniaz baino ez datoz iturrian. */
+const SUB_EU = {
+  "Acuaticas":"Uretakoak", "Aloctonas y domesticas":"Aloktonoak eta etxekoak",
+  "Anfibios":"Anfibioak", "Carnivoros":"Haragijaleak", "Crustaceos":"Krustazeoak",
+  "Herbivoros":"Belarjaleak", "Insectivoros":"Intsektujaleak", "Ofidios":"Sugeak",
+  "Otras aves":"Beste hegazti batzuk", "Paseriformes":"Paseriformeak",
+  "Peces":"Arrainak", "Quelonios":"Dortokak", "Rapaces diurnas":"Eguneko harrapariak",
+  "Rapaces nocturnas":"Gaueko harrapariak", "Roedores":"Karraskariak",
+  "Saurios":"Sauroak", "Voladores":"Hegalariak"
+};
+const subLabel = (v, l) => (l === "eu" && SUB_EU[v]) ? SUB_EU[v] : v;
 const clsOf = i => { const c = RAW.spClass[i]; return c >= 0 ? CLASSES[c] : ""; };
 const CLS_BIRD = "AVES", CLS_MAM = "MAMIFEROS", CLS_REP = "REPTILES";
 
@@ -755,7 +767,8 @@ function paintTable(){
     const f = e.n ? e.free / e.n * 100 : 0, l = e.n ? e.lost / e.n * 100 : 0;
     return `<tr><td>${esc(spName(s, lang))}${s.sci ? `<span class="sci">${esc(s.sci)}</span>` : ""}</td>` +
       `<td>${esc(subName(e.i))}</td>` +
-      `<td class="n">${num(e.n)}</td>` +
+      `<td class="n"><span class="qty" aria-hidden="true">` +
+      `<i style="width:${(Math.sqrt(e.n / mx) * 100).toFixed(1)}%"></i></span>${num(e.n)}</td>` +
       `<td class="n">${num(e.live)}</td>` +
       `<td class="n">${num(e.free)}</td>` +
       `<td><span class="bar" aria-hidden="true"><i class="f" style="width:${f.toFixed(1)}%"></i>` +
@@ -771,7 +784,7 @@ function paintTable(){
     `<span><i style="background:${cssv("--night-3")}"></i>${t.legRowFree}</span>` +
     `<span><i style="background:${cssv("--oxide-soft")}"></i>${t.legRowLost}</span>`;
 }
-const subName = i => { const s = RAW.spSub[i]; return s >= 0 ? SUBS[s] : (clsOf(i) || "—"); };
+const subName = i => { const s = RAW.spSub[i]; return subLabel(s >= 0 ? SUBS[s] : (clsOf(i) || "—"), lang); };
 
 function downloadCsv(){
   const es = lang === "es";

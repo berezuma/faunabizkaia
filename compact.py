@@ -39,6 +39,18 @@ def title(s):
     s = clean(s)
     return s[0].upper() + s[1:].lower() if s else s
 
+# Azpiklase berbera bitan banatuta dator iturrian: generoak («Acuaticas» eta
+# «Acuaticos») eta azentuak («domesticas» eta «domésticas») bereizten dituzte.
+# Arau orokor bat arriskutsua litzateke; zerrenda esplizitua segurua da.
+SUB_MERGE = {
+    "ACUATICOS": "Acuaticas",
+    "ALOCTONAS Y DOMESTICAS": "Aloctonas y domesticas",
+}
+
+def sub_canon(name):
+    return SUB_MERGE.get(key(name), name)
+
+
 # --- taldekatzeak ---------------------------------------------------------
 # Zergatik iritsi den. «Kentzeko» taldea ez da erreskate bat: norbaitek
 # animalia hori hortik kendu nahi zuen.
@@ -88,7 +100,7 @@ if __name__ == "__main__":
 
     species = [{"es": pick(k, "es"), "eu": pick(k, "eu"), "sci": pick(k, "sci")} for k in sp_keys]
     cls_of = [key(pick(k, "cls")) for k in sp_keys]
-    sub_of = [title(pick(k, "sub")) for k in sp_keys]
+    sub_of = [sub_canon(title(pick(k, "sub"))) for k in sp_keys]
 
     classes = sorted({c for c in cls_of if c})
     subs = sorted({s for s in sub_of if s})

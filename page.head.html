@@ -322,6 +322,13 @@ tr:last-child td{border-bottom:0}
 td.n{text-align:right; white-space:nowrap}
 td.empty{color:var(--muted)}
 td .sci{display:block; color:var(--muted); font-size:.88em; font-style:italic}
+/* Kopuruaren barra: 526etik 1era doa, eta mediana 4 da. Lineala izanez gero
+   buztan osoa pixel bakarra litzateke; erro karratuak banaketa ikusgai uzten
+   du zenbakia faltsutu gabe — zenbakia bera ondoan dago beti. */
+.qty{display:inline-block; width:52px; height:7px; margin-right:9px; border-radius:1px;
+  background:var(--rule); vertical-align:baseline; position:relative; overflow:hidden}
+.qty i{position:absolute; left:0; top:0; height:100%; background:var(--night-3); opacity:.5}
+
 /* Zutabe-barra: espeziearen emaitza, kutxa baten barruan. */
 .bar{position:relative; display:inline-block; width:46px; height:9px; border-radius:1px;
   background:var(--rule); vertical-align:baseline; margin-right:8px; overflow:hidden}
